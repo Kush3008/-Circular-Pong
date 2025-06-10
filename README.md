@@ -1,5 +1,6 @@
 A reimagination of the classic Pong game — in a circular arena. Featuring smooth controls, fun physics, CPU mode, multiple game types, customizable colors.
 
+Live at: https://kush3008.github.io/-Circular-Pong/
 
 🎮 How to Play
 Player 1 Controls: A and D keys to rotate paddle.
