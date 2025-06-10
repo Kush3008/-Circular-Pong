@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Circular Pong</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+    #menu {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 20;
+    }
+    .btn {
+      font-size: 18px;
+      padding: 10px 15px;
+      margin: 10px;
+      background: #444;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .btn:hover {
+      background: #666;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui" style="position:absolute;width:100%;top:10px;display:flex;justify-content:center;align-items:center;gap:20px;z-index:10;">
+    <div id="score">Player 1: 0 | Player 2: 0</div>
+    <button class="btn" onclick="resetGame()">Restart</button>
+    <button class="btn" onclick="showMenu()">Menu</button>
+    <button class="btn" onclick="toggleMute()" id="muteBtn">🔊</button>
+  </div>
+  <div id="menu">
+    <h1>Circular Pong</h1>
+    <button class="btn" onclick="startGame()">Start Game</button>
+    <button class="btn" onclick="toggleHalfCircle()">Toggle Half Circle Mode</button>
+    <button class="btn" onclick="toggleCPU()">Toggle CPU</button>
+    <div>
+      <p>Choose Colors:</p>
+      <input type="color" id="color1" value="#00ffff">
+      <input type="color" id="color2" value="#ff00ff">
+    </div>
+    <button class="btn" onclick="alert('Use A/D for Player 1, ←/→ for Player 2. Avoid letting the ball get past your paddle.')">Instructions</button>
+  </div>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) / 3;
+    const paddleLength = Math.PI / 6;
+    const paddleSpeed = 0.05;
+    let score1 = 0, score2 = 0;
+    let gameRunning = false;
+    let isMuted = false;
+    let cpuEnabled = true;
+    let cpuDifficulty = 2;
+    let restrictHalfCircle = false;
+    let lastTouchBy = null;
+
+    const bounceSound = new Audio("https://freesound.org/data/previews/256/256113_3263906-lq.mp3");
+    const scoreSound = new Audio("https://freesound.org/data/previews/320/320181_5260877-lq.mp3");
+
+    const ball = {
+      radius: 10,
+      speed: 4,
+      x: width / 2,
+      y: height / 2,
+      vx: 4,
+      vy: 2
+    };
+
+    const paddles = [
+      { angle: Math.PI / 2, keyLeft: 'a', keyRight: 'd' },
+      { angle: 3 * Math.PI / 2, keyLeft: 'ArrowLeft', keyRight: 'ArrowRight' }
+    ];
+
+    const keysPressed = {};
+    window.addEventListener('keydown', (e) => keysPressed[e.key] = true);
+    window.addEventListener('keyup', (e) => keysPressed[e.key] = false);
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      document.getElementById("muteBtn").textContent = isMuted ? '🔇' : '🔊';
+    }
+
+    function toggleHalfCircle() {
+      restrictHalfCircle = !restrictHalfCircle;
+    }
+
+    function toggleCPU() {
+      cpuEnabled = !cpuEnabled;
+      alert("CPU is now " + (cpuEnabled ? "Enabled" : "Disabled"));
+    }
+
+    function startGame() {
+      document.getElementById("menu").style.display = "none";
+      resetGame();
+      gameRunning = true;
+    }
+
+    function showMenu() {
+      gameRunning = false;
+      document.getElementById("menu").style.display = "flex";
+    }
+
+    function resetBall() {
+      ball.x = centerX;
+      ball.y = centerY;
+      const angle = Math.random() * Math.PI * 2;
+      ball.vx = ball.speed * Math.cos(angle);
+      ball.vy = ball.speed * Math.sin(angle);
+    }
+
+    function updateScore() {
+      document.getElementById("score").textContent = `Player 1: ${score1} | Player 2: ${score2}`;
+    }
+
+    function resetGame() {
+      score1 = 0;
+      score2 = 0;
+      updateScore();
+      resetBall();
+    }
+
+    function update() {
+      if (!gameRunning) return;
+
+      const ballAngle = Math.atan2(ball.y - centerY, ball.x - centerX);
+      const ballDirection = (ballAngle + 2 * Math.PI) % (2 * Math.PI);
+
+      paddles.forEach((paddle, i) => {
+        const isCpu = i === 1 && cpuEnabled;
+        const paddleAngleNorm = (paddle.angle + 2 * Math.PI) % (2 * Math.PI);
+        const isBallHeadingToward = i === 0 ? ballDirection <= Math.PI : ballDirection > Math.PI;
+
+        if (restrictHalfCircle) {
+          if (i === 0 && paddle.angle > Math.PI) paddle.angle = Math.PI;
+          if (i === 1 && paddle.angle < Math.PI) paddle.angle = Math.PI;
+        }
+
+        if (isCpu && isBallHeadingToward) {
+          let delta = ballDirection - paddleAngleNorm;
+          if (delta > Math.PI) delta -= 2 * Math.PI;
+          if (delta < -Math.PI) delta += 2 * Math.PI;
+          paddle.angle += Math.sign(delta) * paddleSpeed * cpuDifficulty * 0.5;
+        } else if (!isCpu) {
+          if (keysPressed[paddle.keyLeft]) paddle.angle -= paddleSpeed;
+          if (keysPressed[paddle.keyRight]) paddle.angle += paddleSpeed;
+        }
+      });
+
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      const dx = ball.x - centerX;
+      const dy = ball.y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > radius - ball.radius) {
+        let hit = false;
+        paddles.forEach((paddle, i) => {
+          const paddleAngleNorm = (paddle.angle + 2 * Math.PI) % (2 * Math.PI);
+          let delta = Math.abs(paddleAngleNorm - ballDirection);
+          if (delta > Math.PI) delta = 2 * Math.PI - delta;
+
+          const validSide = (i === 0 && ballDirection <= Math.PI) || (i === 1 && ballDirection > Math.PI);
+          if (validSide && delta < paddleLength / 2) {
+            const nx = dx / dist;
+            const ny = dy / dist;
+            const influence = (Math.random() - 0.5) * 0.5 + (keysPressed[paddle.keyLeft] ? -0.2 : 0) + (keysPressed[paddle.keyRight] ? 0.2 : 0);
+            const angle = Math.atan2(ny, nx) + Math.PI + influence;
+            const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+            ball.vx = speed * Math.cos(angle);
+            ball.vy = speed * Math.sin(angle);
+            if (!isMuted) bounceSound.play();
+            hit = true;
+            lastTouchBy = i;
+          }
+        });
+
+        if (!hit) {
+          if (lastTouchBy !== null) {
+            if (lastTouchBy === 0) score1++;
+            else score2++;
+          }
+          updateScore();
+          if (!isMuted) scoreSound.play();
+          if (score1 >= 5 || score2 >= 5) {
+            gameRunning = false;
+            alert(`Game Over! ${score1 >= 5 ? "Player 1" : "Player 2"} Wins!`);
+            showMenu();
+          } else {
+            resetBall();
+            lastTouchBy = null;
+          }
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      if (restrictHalfCircle) {
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY - radius);
+        ctx.lineTo(centerX, centerY + radius);
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius / 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      paddles.forEach((paddle, idx) => {
+        const start = paddle.angle - paddleLength / 2;
+        const end = paddle.angle + paddleLength / 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, start, end);
+        ctx.strokeStyle = idx === 0 ? document.getElementById("color1").value : document.getElementById("color2").value;
+        ctx.lineWidth = 10;
+        ctx.stroke();
+      });
+
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'red';
+      ctx.fill();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
